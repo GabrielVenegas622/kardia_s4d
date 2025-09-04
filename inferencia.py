@@ -4,6 +4,8 @@ import numpy as np
 import wfdb
 import argparse
 from Train import S4Model # Reutilizamos la definición del modelo desde Train.py
+import time
+
 
 # --- CONFIGURACIÓN ---
 # Estas son las 8 clases de diagnóstico que usamos en el script preparar_datos.py
@@ -49,22 +51,46 @@ def predecir_ecg(modelo, ruta_ecg):
         if signal.shape[0] != 1000:
             raise ValueError(f"La señal tiene una longitud de {signal.shape[0]}, pero el modelo espera 1000.")
         
+        poc = np.sum(signal == 0)/signal.size
+        if poc > 0.65:
+            signal = np.tile(signal[:250], (4, 1))
+            
+
         signal = signal.astype(np.float32)
         # Añadimos una dimensión de "batch" al principio -> (1, 1000, 12)
         signal_tensor = torch.from_numpy(signal).unsqueeze(0)
         
         # 3. Realizar la inferencia
+
+        
         print("==> Procesando con el modelo S4D...")
+        # Guardar el tiempo inicial
+        start_time = time.time()
+
         with torch.no_grad(): # No necesitamos calcular gradientes para la inferencia
             predicciones = modelo(signal_tensor)
             
         # El resultado es un tensor de probabilidades, lo convertimos a una lista de Python
         probabilidades = predicciones.squeeze().tolist()
         
+        # Guardar el tiempo final
+        end_time = time.time()
+
+        # Calcular la duración
+        elapsed_time = end_time - start_time
+
         # 4. Mostrar los resultados de forma clara
         print("\n--- Resultados de la Inferencia ---")
+        print(f"El código se ejecutó en {elapsed_time:.4f} segundos.")
+        
+        w = ''
         for i, clase in enumerate(CLASES_DIAGNOSTICO):
             print(f"- {clase:<28}: {probabilidades[i]:.2%}")
+            w+= f"{(probabilidades[i]):.4f},"
+        w+=f"{elapsed_time:.4f}\n"
+
+        with open('likelihood_output_summary.csv', 'a') as archivo:
+            archivo.write(w)
             
     except FileNotFoundError:
         print(f"\n[ERROR] No se pudo encontrar el archivo ECG: {ruta_ecg}.hea o {ruta_ecg}.mat")
